@@ -23,6 +23,6 @@ https://github.com/unimorph/afb
 
 ## Deadline
 
-- 18th of January 2026 (I think!)
+- 18th of January 2026 
 
 
