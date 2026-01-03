@@ -1,7 +1,3 @@
-'''
-This file belongs to Mans Huldens, at eztransformer/eztr.py at main · github.com/mhulden/eztransformer
-'''
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,6 +5,8 @@ from torch.utils.data import DataLoader
 import random
 from tqdm import tqdm
 import math
+import pandas as pd
+
 
 class EZTransformer:
     def __init__(self, **kwargs):
@@ -47,23 +45,12 @@ class EZTransformer:
         if self.load_model:
             self.load_model_from_file(self.load_model)
 
-        self.token2idx = kwargs.get('token2idx')
-
-
-    def build_scheduler(self, warmup):
-        
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer,
-            lambda step: min((step+1)**-0.5, (step+1) * warmup**-1.5)
-        )
-
-    def fit(self, train_data, valid_data=None, max_epochs=100, print_validation_examples=0, warmup=10):
+    def fit(self, train_data, valid_data=None, max_epochs=100, print_validation_examples=0, return_history=False):
         # Build vocabulary from train_data if not already built
         if self.token2idx is None:
             self.build_vocab(train_data)
             self.build_model()
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.lrt, betas=self.adam_betas)
-            self.build_scheduler(warmup=warmup)
         else:
             print("Continuing training with existing model weights.")
 
@@ -77,6 +64,9 @@ class EZTransformer:
         # Define loss function
         criterion = nn.CrossEntropyLoss(ignore_index=self.pad_idx, label_smoothing=self.lst)
 
+        # Define the history dataframe
+        training_history = pd.DataFrame(columns = ["epoch", "train_loss", "val_loss"])
+        
         # Training loop
         for epoch in range(max_epochs):
             # Training
@@ -101,11 +91,8 @@ class EZTransformer:
 
                 epoch_loss += loss.item()
 
-                self.scheduler.step()
-            
-            print(f"Epoch {epoch+1}: Learning Rate: {self.optimizer.param_groups[0]['lr']:.6f}")
-
             avg_epoch_loss = epoch_loss / len(train_loader)
+
             print(f"Epoch {epoch+1}: Training Loss: {avg_epoch_loss:.6f}")
 
             # Validation
@@ -114,13 +101,20 @@ class EZTransformer:
                 print(f"Epoch {epoch+1}: Validation Loss: {valid_loss:.6f}")
 
                 # Save the best model
-                if self.save_best and (epoch+1) % self.save_best == 0 and valid_loss < self.best_valid_loss:
+                if self.save_best and valid_loss < self.best_valid_loss:
                     self.best_valid_loss = valid_loss
                     self.write_model('best_model.pt')
 
             # Print validation examples
             if print_validation_examples > 0 and valid_data:
                 self.print_validation_examples(valid_data, n=print_validation_examples)
+            
+            training_history.loc[epoch, "epoch"] = epoch + 1
+            training_history.loc[epoch, "train_loss"] = avg_epoch_loss
+            training_history.loc[epoch, "val_loss"] = valid_loss
+
+        if return_history:
+            return training_history
 
     def build_vocab(self, data):
         tokens = set()
