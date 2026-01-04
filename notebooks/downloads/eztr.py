@@ -91,14 +91,17 @@ class EZTransformer:
 
                 epoch_loss += loss.item()
 
-            avg_epoch_loss = epoch_loss / len(train_loader)
+                self.scheduler.step()
+            
+            print(f"Epoch {epoch+1}: Learning Rate: {self.optimizer.param_groups[0]['lr']:.2e}")
 
-            print(f"Epoch {epoch+1}: Training Loss: {avg_epoch_loss:.6f}")
+            avg_epoch_loss = epoch_loss / len(train_loader)
+            print(f"Epoch {epoch+1}: Training Loss: {avg_epoch_loss:.4f}")
 
             # Validation
             if valid_loader:
                 valid_loss = self.evaluate(valid_loader, criterion)
-                print(f"Epoch {epoch+1}: Validation Loss: {valid_loss:.6f}")
+                print(f"Epoch {epoch+1}: Validation Loss: {valid_loss:.4f}")
 
                 # Save the best model
                 if self.save_best and valid_loss < self.best_valid_loss:
@@ -198,7 +201,10 @@ class EZTransformer:
                 # "Predicted:" in red, prediction in default color
                 print(f"\033[91mPredicted:\033[0m {prediction}\n")
 
-    def predict(self, test_data):
+    def predict(self, test_data, max_len=25):
+        '''
+        # max_len: Maximum prediction length
+        '''
         self.model.eval()
         predictions = []
 
@@ -207,7 +213,6 @@ class EZTransformer:
                 src_indices = [self.token2idx.get(token, self.unk_idx) for token in src.split()]
                 src_tensor = torch.LongTensor([self.sos_idx] + src_indices + [self.eos_idx]).unsqueeze(0).to(self.device)
 
-                max_len = 50  # Maximum prediction length
                 trg_indices = [self.sos_idx]
 
                 for _ in range(max_len):
@@ -323,7 +328,8 @@ class TransformerModel(nn.Module):
             num_encoder_layers=num_layers,
             num_decoder_layers=dec_num_layers,
             dim_feedforward=hidden_size,
-            dropout=dropout
+            dropout=dropout,
+            batch_first=False
         )
 
         self.fc_out = nn.Linear(emb_size, vocab_size)
