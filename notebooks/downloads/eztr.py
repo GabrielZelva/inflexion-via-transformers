@@ -1,7 +1,3 @@
-'''
-This file belongs to Mans Huldens, at eztransformer/eztr.py at main · github.com/mhulden/eztransformer
-'''
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,6 +5,8 @@ from torch.utils.data import DataLoader
 import random
 from tqdm import tqdm
 import math
+import pandas as pd
+
 
 class EZTransformer:
     def __init__(self, **kwargs):
@@ -47,23 +45,12 @@ class EZTransformer:
         if self.load_model:
             self.load_model_from_file(self.load_model)
 
-        self.token2idx = kwargs.get('token2idx')
-
-
-    def build_scheduler(self, warmup):
-        
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer,
-            lambda step: min((step+1)**-0.5, (step+1) * warmup**-1.5)
-        )
-
-    def fit(self, train_data, valid_data=None, max_epochs=100, print_validation_examples=0, warmup=10):
+    def fit(self, train_data, valid_data=None, max_epochs=100, print_validation_examples=0, return_history=False):
         # Build vocabulary from train_data if not already built
         if self.token2idx is None:
             self.build_vocab(train_data)
             self.build_model()
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.lrt, betas=self.adam_betas)
-            self.build_scheduler(warmup=warmup)
         else:
             print("Continuing training with existing model weights.")
 
@@ -77,6 +64,9 @@ class EZTransformer:
         # Define loss function
         criterion = nn.CrossEntropyLoss(ignore_index=self.pad_idx, label_smoothing=self.lst)
 
+        # Define the history dataframe
+        training_history = pd.DataFrame(columns = ["epoch", "train_loss", "val_loss"])
+        
         # Training loop
         for epoch in range(max_epochs):
             # Training
@@ -103,24 +93,31 @@ class EZTransformer:
 
                 self.scheduler.step()
             
-            print(f"Epoch {epoch+1}: Learning Rate: {self.optimizer.param_groups[0]['lr']:.6f}")
+            print(f"Epoch {epoch+1}: Learning Rate: {self.optimizer.param_groups[0]['lr']:.2e}")
 
             avg_epoch_loss = epoch_loss / len(train_loader)
-            print(f"Epoch {epoch+1}: Training Loss: {avg_epoch_loss:.6f}")
+            print(f"Epoch {epoch+1}: Training Loss: {avg_epoch_loss:.4f}")
 
             # Validation
             if valid_loader:
                 valid_loss = self.evaluate(valid_loader, criterion)
-                print(f"Epoch {epoch+1}: Validation Loss: {valid_loss:.6f}")
+                print(f"Epoch {epoch+1}: Validation Loss: {valid_loss:.4f}")
 
                 # Save the best model
-                if self.save_best and (epoch+1) % self.save_best == 0 and valid_loss < self.best_valid_loss:
+                if self.save_best and valid_loss < self.best_valid_loss:
                     self.best_valid_loss = valid_loss
                     self.write_model('best_model.pt')
 
             # Print validation examples
             if print_validation_examples > 0 and valid_data:
                 self.print_validation_examples(valid_data, n=print_validation_examples)
+            
+            training_history.loc[epoch, "epoch"] = epoch + 1
+            training_history.loc[epoch, "train_loss"] = avg_epoch_loss
+            training_history.loc[epoch, "val_loss"] = valid_loss
+
+        if return_history:
+            return training_history
 
     def build_vocab(self, data):
         tokens = set()
@@ -204,7 +201,10 @@ class EZTransformer:
                 # "Predicted:" in red, prediction in default color
                 print(f"\033[91mPredicted:\033[0m {prediction}\n")
 
-    def predict(self, test_data):
+    def predict(self, test_data, max_len=25):
+        '''
+        # max_len: Maximum prediction length
+        '''
         self.model.eval()
         predictions = []
 
@@ -213,7 +213,6 @@ class EZTransformer:
                 src_indices = [self.token2idx.get(token, self.unk_idx) for token in src.split()]
                 src_tensor = torch.LongTensor([self.sos_idx] + src_indices + [self.eos_idx]).unsqueeze(0).to(self.device)
 
-                max_len = 50  # Maximum prediction length
                 trg_indices = [self.sos_idx]
 
                 for _ in range(max_len):
@@ -329,7 +328,8 @@ class TransformerModel(nn.Module):
             num_encoder_layers=num_layers,
             num_decoder_layers=dec_num_layers,
             dim_feedforward=hidden_size,
-            dropout=dropout
+            dropout=dropout,
+            batch_first=False
         )
 
         self.fc_out = nn.Linear(emb_size, vocab_size)
