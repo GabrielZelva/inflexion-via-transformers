@@ -16,4 +16,4 @@ The objective was to train and evaluate seq2seq transformers on different langua
 
 ## See the results!
 
-You can see the results in this [notebook](https://github.com/GabrielZelva/inflexion-via-transformers/blob/transfer-learning-experiments/notebooks/full_experiments.ipynb). 
+You can see the results in this [notebook](https://github.com/GabrielZelva/inflexion-via-transformers/blob/main/notebooks/full_experiments.ipynb). 
